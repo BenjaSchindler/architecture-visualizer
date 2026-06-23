@@ -1,0 +1,10 @@
+{
+  "name": "architecture-visualizer",
+  "description": "Interactive, zero-egress HTML architecture maps of any codebase — cloud, database, agentic, and code-structure views, with real product logos and an ELK box layout. Renders 100% locally in the browser; nothing about the codebase ever leaves the machine.",
+  "version": "1.0.0",
+  "author": { "name": "Benjamin Schindler" },
+  "homepage": "https://github.com/BenjaSchindler/architecture-visualizer",
+  "repository": "https://github.com/BenjaSchindler/architecture-visualizer",
+  "license": "MIT",
+  "keywords": ["architecture", "diagram", "visualization", "codebase", "onboarding", "cloud", "database", "agents", "mcp", "zero-egress", "cytoscape", "elk"]
+}

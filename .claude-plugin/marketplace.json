@@ -1,0 +1,14 @@
+{
+  "name": "benja-skills",
+  "owner": { "name": "Benjamin Schindler" },
+  "description": "Claude Code skills by Benjamin Schindler.",
+  "plugins": [
+    {
+      "name": "architecture-visualizer",
+      "source": "./",
+      "description": "Interactive, zero-egress HTML architecture maps (cloud · data · agentic · structure) with real product logos and an ELK box layout.",
+      "category": "visualization",
+      "keywords": ["architecture", "diagram", "codebase", "zero-egress"]
+    }
+  ]
+}

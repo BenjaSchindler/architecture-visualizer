@@ -28,14 +28,27 @@ remote image** — opening the file makes **zero network requests** (enforced by
 
 ## Install
 
-Copy this folder into your Claude Code skills directory:
+### Option A — as a plugin (recommended)
 
-```bash
-git clone <this-repo> ~/.claude/skills/architecture-visualizer
-# or: cp -r architecture-visualizer ~/.claude/skills/
+This repo is its own Claude Code plugin marketplace. In Claude Code:
+
+```text
+/plugin marketplace add BenjaSchindler/architecture-visualizer
+/plugin install architecture-visualizer@benja-skills
 ```
 
-That's it — Claude Code auto-discovers it. (Requires `python3`, standard library only.)
+Then just ask Claude to *"map this repo's architecture"* (or invoke
+`/architecture-visualizer` explicitly). If you installed mid-session, run
+`/reload-plugins` first.
+
+### Option B — as a personal skill (manual)
+
+```bash
+git clone https://github.com/BenjaSchindler/architecture-visualizer /tmp/av
+cp -r /tmp/av ~/.claude/skills/architecture-visualizer
+```
+
+Either way it needs only `python3` (standard library — no `pip install`).
 
 ## Use
 

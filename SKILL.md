@@ -44,7 +44,7 @@ Write a model JSON following `references/model-schema.md` (engine-agnostic: `gro
 
 ### Step 4 — Render
 ```bash
-python3 "$HOME/.claude/skills/architecture-visualizer/scripts/render.py" \
+python3 "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/architecture-visualizer}/scripts/render.py" \
   --model /path/to/model.json \
   --out   /path/to/output.html \
   --title "Repo Name — agentic view"
@@ -53,7 +53,7 @@ python3 "$HOME/.claude/skills/architecture-visualizer/scripts/render.py" \
 
 ### Step 5 — Verify zero-egress & report
 ```bash
-bash "$HOME/.claude/skills/architecture-visualizer/scripts/verify_no_egress.sh" /path/to/output.html
+bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/architecture-visualizer}/scripts/verify_no_egress.sh" /path/to/output.html
 ```
 Expect `PASS`. Then tell the user the path, that it's **self-contained / safe to open offline**, and that they can **double-click to open**. Mention the in-browser **⤓ PNG** button if they want a flat image. Gold-standard manual check: open with DevTools → Network → 0 requests (or just open with Wi-Fi off).
 
