@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Generated architecture diagrams describe YOUR codebase — never commit them here.
+# (Keep them out of any shared/public repo.) Put your own outputs under out/.
+/out/
+*.generated.html
+*.model.json

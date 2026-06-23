@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Zero-egress defense in depth: block all network connections at the browser level.
+     The diagram renders 100% locally; icons are inlined base64 data: URIs; nothing is ever sent out. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self' 'unsafe-inline' data:; connect-src 'none'; img-src 'self' data:; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>__TITLE__</title>
+<style>
+  :root {
+    --bar: #1f2937; --bar-fg: #e5e7eb; --panel: #ffffff; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #2563eb;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+
+  /* Toolbar */
+  #bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bar);
+         color: var(--bar-fg); flex: 0 0 auto; flex-wrap: wrap; }
+  #bar .title { font-weight: 600; font-size: 14px; margin-right: 4px; white-space: nowrap;
+                max-width: 38vw; overflow: hidden; text-overflow: ellipsis; }
+  #bar .view-badge { font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+                     background: var(--accent); color: #fff; padding: 2px 8px; border-radius: 999px; }
+  #bar .spacer { flex: 1 1 auto; }
+  #bar input, #bar select, #bar button {
+    font-size: 12px; padding: 5px 8px; border-radius: 6px; border: 1px solid #374151;
+    background: #111827; color: var(--bar-fg); cursor: pointer; }
+  #bar input { cursor: text; min-width: 150px; }
+  #bar button:hover, #bar select:hover { background: #0b1220; }
+  #bar label { font-size: 11px; color: #9ca3af; }
+
+  /* Stage */
+  #stage { position: relative; flex: 1 1 auto; min-height: 0; }
+  #cy { position: absolute; inset: 0; background:
+        radial-gradient(circle at 1px 1px, #e7eaef 1px, transparent 0) 0 0 / 24px 24px, #f7f8fa; }
+
+  /* Detail panel */
+  #panel { position: absolute; top: 10px; right: 10px; width: 320px; max-height: calc(100% - 20px);
+           overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+           box-shadow: 0 8px 28px rgba(0,0,0,.14); padding: 14px 16px; display: none; font-size: 13px; }
+  #panel.show { display: block; }
+  #panel h2 { margin: 0 6px 6px 0; font-size: 15px; display: inline; }
+  #panel .close { float: right; cursor: pointer; color: var(--muted); font-size: 18px; line-height: 1;
+                  border: none; background: none; }
+  #panel .badge { display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
+                  padding: 2px 7px; border-radius: 999px; margin: 6px 0; }
+  #panel .file { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; color: #0f3d91;
+                 background: #eef3fe; padding: 4px 6px; border-radius: 5px; word-break: break-all; margin: 6px 0; }
+  #panel .desc { color: #374151; margin: 8px 0; line-height: 1.45; }
+  #panel table { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 11.5px; }
+  #panel th, #panel td { text-align: left; padding: 3px 6px; border-bottom: 1px solid #f0f1f3; vertical-align: top; }
+  #panel th { color: var(--muted); font-weight: 600; }
+  #panel .pk { color: #b45309; font-weight: 700; }
+  #panel .fk { color: #1d4ed8; font-weight: 600; }
+  #panel .kv { color: var(--muted); }
+  #panel .conns { margin-top: 10px; }
+  #panel .conns div { padding: 2px 0; color: #374151; }
+  #panel .conns .arrow { color: var(--accent); }
+
+  /* Legend */
+  #legend { position: absolute; left: 10px; bottom: 10px; background: rgba(255,255,255,.94);
+            border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 11.5px;
+            max-width: 260px; max-height: 46%; overflow: auto; box-shadow: 0 4px 14px rgba(0,0,0,.08); }
+  #legend h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  #legend .row { display: flex; align-items: center; gap: 7px; padding: 2px 0; }
+  #legend .sw { width: 16px; height: 12px; border-radius: 3px; border: 2px solid #888; flex: 0 0 auto; }
+  #legend .el { width: 18px; height: 0; border-top-width: 3px; flex: 0 0 auto; }
+  #legend .toggle { cursor: pointer; color: var(--accent); margin-top: 6px; display: inline-block; }
+
+  /* Notes / caveats banner */
+  #notes { position: absolute; left: 50%; transform: translateX(-50%); bottom: 10px;
+           background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: 8px;
+           padding: 7px 12px; font-size: 11.5px; max-width: 46vw; display: none; box-shadow: 0 4px 14px rgba(0,0,0,.08); }
+  #notes.show { display: block; }
+  #notes b { cursor: pointer; }
+  #notes ul { margin: 6px 0 0; padding-left: 16px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="bar">
+    <span class="title" id="docTitle">__TITLE__</span>
+    <span class="view-badge" id="viewBadge">view</span>
+    <span class="spacer"></span>
+    <input id="search" type="search" placeholder="Search nodes…" autocomplete="off">
+    <label for="layout">layout</label>
+    <select id="layout">
+      <option value="elk">boxes</option>
+      <option value="cose">organic</option>
+      <option value="breadthfirst">layered</option>
+      <option value="concentric">concentric</option>
+      <option value="grid">grid</option>
+      <option value="circle">circle</option>
+    </select>
+    <button id="btnCollapse" title="Collapse / expand all groups">⊟ Collapse all</button>
+    <button id="btnFit" title="Fit graph to screen">⤢ Fit</button>
+    <button id="btnPng" title="Download a PNG snapshot (rendered locally)">⤓ PNG</button>
+  </div>
+  <div id="stage">
+    <div id="cy"></div>
+    <div id="panel">
+      <button class="close" id="panelClose" title="Close">×</button>
+      <h2 id="pTitle"></h2>
+      <div id="pBody"></div>
+    </div>
+    <div id="legend"></div>
+    <div id="notes"></div>
+  </div>
+</div>
+
+<script>__CYTOSCAPE_LIB__</script>
+<script>__LAYOUT_LIBS__</script>
+<script>
+/* Register the ELK hierarchical layout if its libs were inlined; otherwise the
+   built-in 'cose' layout is used. ELK runs in-process (no web worker fetched),
+   so there is no network access either way. */
+var HAS_ELK = false;
+try { if (window.cytoscape && window.cytoscapeElk) { cytoscape.use(window.cytoscapeElk); HAS_ELK = true; } } catch (e) { HAS_ELK = false; }
+</script>
+<script>
+/* ---------- model + icons (injected by render.py) ---------- */
+var MODEL = __MODEL_JSON__;
+var ICONS = __ICONS_JSON__;   /* { nodeId: "data:image/svg+xml;base64,…" } — inlined, zero-egress */
+
+/* ---------- type & edge styling taxonomy ---------- */
+var TYPES = {
+  external:    { shape: 'round-rectangle', border: '#c2410c', fill: '#ffe7d6', label: 'External system / egress' },
+  datastore:   { shape: 'round-rectangle', border: '#15803d', fill: '#d8f0df', label: 'Datastore / database' },
+  vectorstore: { shape: 'round-rectangle', border: '#0e7490', fill: '#d2eef2', label: 'Vector store' },
+  router:      { shape: 'round-rectangle', border: '#1d4ed8', fill: '#dbe6fe', label: 'Router / orchestrator' },
+  agent:       { shape: 'round-rectangle', border: '#6d28d9', fill: '#eadcfb', label: 'Agent' },
+  tool:        { shape: 'round-rectangle', border: '#a16207', fill: '#fbf1cf', label: 'Tool' },
+  mcp:         { shape: 'round-rectangle', border: '#4338ca', fill: '#e1e3fb', label: 'MCP server' },
+  table:       { shape: 'round-rectangle', border: '#334155', fill: '#e7ecf2', label: 'DB table' },
+  service:     { shape: 'round-rectangle', border: '#475569', fill: '#e9edf2', label: 'Service / module' },
+  queue:       { shape: 'round-rectangle', border: '#92400e', fill: '#f3e4d2', label: 'Queue / topic' },
+  config:      { shape: 'round-rectangle', border: '#6b7280', fill: '#eef0f3', label: 'Config / data file' },
+  component:   { shape: 'round-rectangle', border: '#64748b', fill: '#eef1f5', label: 'Component' }
+};
+var EDGES = {
+  primary:     { color: '#475569', width: 2, style: 'solid',  label: 'primary call' },
+  conditional: { color: '#2563eb', width: 2, style: 'dashed', label: 'conditional route' },
+  data:        { color: '#16a34a', width: 2, style: 'dotted', label: 'data / read-write' },
+  external:    { color: '#c2410c', width: 3, style: 'solid',  label: 'crosses trust boundary' },
+  async:       { color: '#7c3aed', width: 2, style: 'dashed', label: 'async / event' }
+};
+/* zone tints for top-level groups — gives the "VPC / Subnet / Cluster" boxed look */
+var ZONE = ['#2563eb', '#16a34a', '#9333ea', '#ea580c', '#0891b2', '#ca8a04', '#db2777', '#4f46e5', '#0d9488', '#64748b'];
+function typeOf(t)  { return TYPES[t] ? t : 'component'; }
+function kindOf(k)  { return EDGES[k] ? k : 'primary'; }
+
+/* ---------- build cytoscape elements from the portable model ---------- */
+function buildElements(model) {
+  var els = [], seen = {}, groupIds = {};
+  var groups = model.groups || [];
+  // resolve each group's zone colour (children inherit their top-level ancestor's)
+  var parentOf = {}; groups.forEach(function (g) { parentOf[g.id] = g.parent || null; });
+  function topAnc(id) { var guard = {}; while (parentOf[id] && !guard[id]) { guard[id] = 1; id = parentOf[id]; } return id; }
+  var zoneColor = {}, zi = 0;
+  groups.forEach(function (g) { if (!g.parent) zoneColor[g.id] = ZONE[zi++ % ZONE.length]; });
+  function tintOf(id) { var t = topAnc(id); if (!zoneColor[t]) zoneColor[t] = ZONE[zi++ % ZONE.length]; return zoneColor[t]; }
+
+  groups.forEach(function (g) {
+    groupIds[g.id] = true;
+    els.push({ data: { id: g.id, label: g.label || g.id, isGroup: true, tint: tintOf(g.id),
+                       parent: g.parent || undefined }, classes: 'group' });
+    seen[g.id] = true;
+  });
+  (model.nodes || []).forEach(function (n) {
+    if (seen[n.id]) return;
+    var t = typeOf(n.type);
+    // auto-create a referenced-but-undeclared group so compound parenting never errors
+    if (n.group && !seen[n.group]) {
+      parentOf[n.group] = null;
+      els.push({ data: { id: n.group, label: n.group, isGroup: true, tint: tintOf(n.group) }, classes: 'group' });
+      seen[n.group] = true; groupIds[n.group] = true;
+    }
+    var data = {
+      id: n.id, label: n.label || n.id, ntype: t, meta: n.meta || {},
+      parent: (n.group && groupIds[n.group]) ? n.group : undefined
+    };
+    if (ICONS && ICONS[n.id]) data.icon = ICONS[n.id];   // [icon] selector -> tile styling
+    els.push({ data: data, classes: 'n-' + t });
+    seen[n.id] = true;
+  });
+  var skipped = 0;
+  (model.edges || []).forEach(function (e, i) {
+    if (!seen[e.source] || !seen[e.target]) { skipped++; return; }
+    var k = kindOf(e.kind);
+    els.push({ data: { id: 'e' + i, source: e.source, target: e.target, label: e.label || '', ekind: k }, classes: 'k-' + k });
+  });
+  if (skipped) console.warn('architecture-visualizer: skipped ' + skipped + ' edge(s) with missing endpoints');
+  return els;
+}
+
+/* ---------- cytoscape stylesheet ---------- */
+function buildStyle() {
+  var s = [
+    { selector: 'node', style: {
+        'label': 'data(label)', 'font-size': 9.5, 'text-wrap': 'wrap', 'text-max-width': 96,
+        'text-valign': 'center', 'text-halign': 'center', 'color': '#111827',
+        'width': 'label', 'height': 'label', 'padding': '8px', 'border-width': 2 } },
+    /* compound parents = clean labelled, zone-tinted boxes */
+    { selector: 'node.group', style: {
+        'background-color': 'data(tint)', 'background-opacity': 0.06, 'shape': 'round-rectangle',
+        'border-width': 1.5, 'border-color': 'data(tint)', 'border-opacity': 0.5, 'border-style': 'solid',
+        'text-valign': 'top', 'text-halign': 'left', 'text-margin-x': 8, 'text-margin-y': 4,
+        'font-size': 11, 'font-weight': 'bold', 'color': 'data(tint)', 'padding': '26px' } },
+    { selector: 'node.collapsed', style: {
+        'background-opacity': 0.16, 'border-style': 'solid',
+        'text-valign': 'center', 'text-halign': 'center', 'text-margin-x': 0, 'text-margin-y': 0 } },
+    { selector: 'edge', style: {
+        'curve-style': 'bezier', 'target-arrow-shape': 'triangle', 'arrow-scale': 0.9,
+        'width': 'data(w)', 'label': 'data(label)', 'font-size': 8, 'color': '#64748b',
+        'text-background-color': '#fff', 'text-background-opacity': 0.85, 'text-background-padding': 1,
+        'text-rotation': 'autorotate', 'min-zoomed-font-size': 7 } },
+    { selector: 'edge.meta', style: { 'line-style': 'solid', 'opacity': 0.85, 'width': 2.5, 'line-color': '#94a3b8',
+        'target-arrow-color': '#94a3b8', 'label': '' } }
+  ];
+  // role colour (border) + shape per type
+  Object.keys(TYPES).forEach(function (t) {
+    s.push({ selector: 'node.n-' + t, style: {
+      'shape': TYPES[t].shape, 'background-color': TYPES[t].fill, 'border-color': TYPES[t].border } });
+  });
+  // icon tile: white card, brand/category glyph on top, label beneath (overrides type fill/shape)
+  s.push({ selector: 'node[icon]', style: {
+      'shape': 'round-rectangle', 'background-color': '#ffffff', 'background-opacity': 1,
+      'background-image': 'data(icon)', 'background-fit': 'contain', 'background-clip': 'none',
+      'background-width': '62%', 'background-height': '62%', 'background-position-x': '50%', 'background-position-y': '30%',
+      'width': 54, 'height': 54, 'padding': '4px', 'border-width': 2,
+      'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': 3, 'font-size': 9.5, 'text-max-width': 86,
+      'text-background-color': '#ffffff', 'text-background-opacity': 0.82, 'text-background-padding': 2,
+      'text-background-shape': 'roundrectangle' } });
+  s.push({ selector: '.dim', style: { 'opacity': 0.10, 'text-opacity': 0.10 } });
+  s.push({ selector: 'node.hl', style: { 'border-width': 4, 'border-color': '#f59e0b' } });
+  s.push({ selector: 'edge.hl', style: { 'width': 4, 'line-color': '#f59e0b', 'target-arrow-color': '#f59e0b', 'opacity': 1 } });
+  s.push({ selector: '.hidden', style: { 'display': 'none' } });
+  Object.keys(EDGES).forEach(function (k) {
+    s.push({ selector: 'edge.k-' + k, style: {
+      'line-color': EDGES[k].color, 'target-arrow-color': EDGES[k].color, 'line-style': EDGES[k].style } });
+  });
+  return s;
+}
+
+/* ---------- init ---------- */
+var els = buildElements(MODEL);
+els.forEach(function (el) { if (el.data && el.data.ekind) el.data.w = EDGES[el.data.ekind].width; });
+
+var cy = cytoscape({
+  container: document.getElementById('cy'),
+  elements: els,
+  style: buildStyle(),
+  wheelSensitivity: 0.2,
+  minZoom: 0.05, maxZoom: 4
+});
+
+document.getElementById('docTitle').textContent = MODEL.title || 'Architecture';
+document.getElementById('viewBadge').textContent = MODEL.view || 'system';
+
+var LAYOUTS = {
+  /* ELK 'layered' = the clean, non-overlapping nested boxes with directional
+     flow. hierarchyHandling:INCLUDE_CHILDREN routes edges across group
+     boundaries while keeping each group a tight, contained rectangle. */
+  elk:         { name: 'elk', fit: true, padding: 30, nodeDimensionsIncludeLabels: true,
+                 elk: {
+                   'algorithm': 'layered',
+                   'elk.direction': 'RIGHT',
+                   'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+                   'elk.spacing.nodeNode': 44,
+                   'elk.layered.spacing.nodeNodeBetweenLayers': 84,
+                   'elk.spacing.componentComponent': 76,
+                   'elk.layered.spacing.edgeNodeBetweenLayers': 30,
+                   'elk.padding': '[top=32,left=30,bottom=26,right=30]',
+                   'elk.layered.crossingMinimization.semiInteractive': true
+                 } },
+  cose:        { name: 'cose', animate: false, padding: 30, nodeRepulsion: 9000, idealEdgeLength: 90,
+                 nestingFactor: 1.2, gravity: 0.35, componentSpacing: 80 },
+  breadthfirst:{ name: 'breadthfirst', directed: true, padding: 30, spacingFactor: 1.2, grid: true },
+  concentric:  { name: 'concentric', padding: 30, minNodeSpacing: 30,
+                 concentric: function (n) { return n.degree(); }, levelWidth: function () { return 2; } },
+  grid:        { name: 'grid', padding: 30, avoidOverlap: true },
+  circle:      { name: 'circle', padding: 30 }
+};
+function runLayout(name) {
+  if (name === 'elk' && !HAS_ELK) name = 'cose';
+  try { cy.layout(LAYOUTS[name] || LAYOUTS.cose).run(); }
+  catch (e) { console.warn('layout "' + name + '" failed; falling back to cose', e);
+              if (name !== 'cose') { try { cy.layout(LAYOUTS.cose).run(); } catch (e2) {} } }
+}
+
+var prefer = HAS_ELK ? 'elk' : 'cose';
+var defaultLayout = ({ cloud: prefer, structure: prefer, data: prefer, agentic: prefer })[MODEL.view] || prefer;
+document.getElementById('layout').value = LAYOUTS[defaultLayout] ? defaultLayout : 'cose';
+/* initial layout is deferred to the end of init (after the panel/legend/notes are
+   wired) so that a layout hiccup can never abort the rest of the UI setup. */
+
+/* ---------- detail panel ---------- */
+var panel = document.getElementById('panel');
+function esc(s) { return String(s).replace(/[&<>"]/g, function (c) {
+  return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
+
+function showPanel(node) {
+  var d = node.data(), m = d.meta || {}, t = d.ntype || 'component';
+  document.getElementById('pTitle').textContent = d.label || d.id;
+  var ti = TYPES[t] || TYPES.component, html = '';
+  html += '<span class="badge" style="background:' + ti.fill + ';color:' + ti.border + '">' + esc(t) + '</span>';
+  if (m.file) html += '<div class="file">' + esc(m.file) + '</div>';
+  var desc = m.desc || m.description;
+  if (desc) html += '<div class="desc">' + esc(desc) + '</div>';
+  if (Array.isArray(m.columns) && m.columns.length) {
+    html += '<table><thead><tr><th>column</th><th>type</th><th></th></tr></thead><tbody>';
+    m.columns.forEach(function (c) {
+      var flags = (c.pk ? '<span class="pk">PK</span> ' : '') + (c.fk ? '<span class="fk">FK</span>' : '');
+      var cm = c.comment ? ' <span class="kv">' + esc(c.comment) + '</span>' : '';
+      html += '<tr><td>' + esc(c.name || '') + '</td><td class="kv">' + esc(c.type || '') + '</td><td>' + flags + cm + '</td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+  var skip = { file: 1, desc: 1, description: 1, columns: 1 };
+  var extra = Object.keys(m).filter(function (k) { return !skip[k]; });
+  if (extra.length) {
+    html += '<table style="margin-top:8px"><tbody>';
+    extra.forEach(function (k) {
+      var v = m[k]; if (v && typeof v === 'object') v = JSON.stringify(v);
+      html += '<tr><th>' + esc(k) + '</th><td>' + esc(v) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+  // connections
+  var outs = node.outgoers('node'), ins = node.incomers('node');
+  if (outs.nonempty() || ins.nonempty()) {
+    html += '<div class="conns"><h3 style="font-size:11px;color:#6b7280;margin:10px 0 4px">connections</h3>';
+    ins.forEach(function (n)  { html += '<div><span class="arrow">→</span> from ' + esc(n.data('label') || n.id()) + '</div>'; });
+    outs.forEach(function (n) { html += '<div><span class="arrow">→</span> to ' + esc(n.data('label') || n.id()) + '</div>'; });
+    html += '</div>';
+  }
+  document.getElementById('pBody').innerHTML = html;
+  panel.classList.add('show');
+}
+function hidePanel() { panel.classList.remove('show'); }
+document.getElementById('panelClose').onclick = function () { hidePanel(); clearHighlight(); };
+
+/* ---------- neighborhood highlight ---------- */
+function clearHighlight() { cy.elements().removeClass('dim hl'); }
+function highlight(node) {
+  var keep = node.closedNeighborhood();
+  cy.elements().addClass('dim');
+  keep.removeClass('dim'); keep.connectedEdges().removeClass('dim');
+  node.addClass('hl');
+}
+cy.on('tap', 'node', function (e) {
+  var n = e.target;
+  if (n.hasClass('group')) { toggleCollapse(n); return; }
+  clearHighlight(); highlight(n); showPanel(n);
+});
+cy.on('tap', function (e) { if (e.target === cy) { clearHighlight(); hidePanel(); } });
+
+/* ---------- search ---------- */
+document.getElementById('search').addEventListener('input', function (e) {
+  var q = e.target.value.trim().toLowerCase();
+  clearHighlight();
+  if (!q) return;
+  var matches = cy.nodes().filter(function (n) {
+    if (n.hasClass('group')) return false;
+    var d = n.data();
+    var hay = (d.label || '') + ' ' + d.id + ' ' + JSON.stringify(d.meta || {});
+    return hay.toLowerCase().indexOf(q) !== -1;
+  });
+  if (matches.nonempty()) {
+    cy.elements().addClass('dim');
+    matches.removeClass('dim').addClass('hl');
+    matches.connectedEdges().removeClass('dim');
+    cy.animate({ fit: { eles: matches, padding: 80 } }, { duration: 250 });
+  }
+});
+
+/* ---------- collapse / expand groups (with meta-edge re-routing) ---------- */
+function toggleCollapse(group) {
+  group.data('collapsed') ? expandGroup(group) : collapseGroup(group);
+}
+function collapseGroup(group) {
+  if (group.data('collapsed')) return;
+  var desc = group.descendants();
+  if (desc.empty()) return;
+  var inside = desc.union(group), made = {};
+  desc.connectedEdges().forEach(function (e) {
+    var s = e.source(), t = e.target();
+    var sIn = inside.contains(s), tIn = inside.contains(t);
+    if (sIn && tIn) return;                      // internal edge: just gets hidden
+    var outside = sIn ? t : s, dirOut = sIn;     // dirOut=true → group→outside
+    if (inside.contains(outside)) return;
+    var key = outside.id() + '|' + dirOut;
+    if (made[key]) return; made[key] = true;
+    var def = dirOut
+      ? { group: 'edges', data: { id: 'meta_' + group.id() + '_' + outside.id() + '_o', source: group.id(), target: outside.id(), metaFor: group.id(), w: 2.5 }, classes: 'meta' }
+      : { group: 'edges', data: { id: 'meta_' + outside.id() + '_' + group.id() + '_i', source: outside.id(), target: group.id(), metaFor: group.id(), w: 2.5 }, classes: 'meta' };
+    cy.add(def);
+  });
+  desc.addClass('hidden');
+  group.addClass('collapsed').data('collapsed', true);
+  if (!group.data('rawLabel')) group.data('rawLabel', (group.data('label') || '').replace(/ \(\d+\)$/, ''));
+  group.data('label', group.data('rawLabel') + ' (' + desc.filter('node').length + ')');
+}
+function expandGroup(group) {
+  if (!group.data('collapsed')) return;
+  cy.edges('.meta[metaFor = "' + group.id() + '"]').remove();
+  group.descendants().removeClass('hidden');
+  group.removeClass('collapsed').data('collapsed', false);
+  if (group.data('rawLabel')) group.data('label', group.data('rawLabel'));
+}
+var allCollapsed = false;
+document.getElementById('btnCollapse').onclick = function () {
+  allCollapsed = !allCollapsed;
+  cy.nodes('.group').forEach(function (g) {
+    if (g.isParent() || g.data('collapsed')) allCollapsed ? collapseGroup(g) : expandGroup(g);
+  });
+  this.textContent = allCollapsed ? '⊞ Expand all' : '⊟ Collapse all';
+};
+
+/* ---------- toolbar ---------- */
+document.getElementById('layout').onchange = function (e) { runLayout(e.target.value); };
+document.getElementById('btnFit').onclick = function () { cy.animate({ fit: { padding: 40 } }, { duration: 250 }); };
+document.getElementById('btnPng').onclick = function () {
+  var png = cy.png({ full: true, scale: 2, bg: '#ffffff' });   // rendered on the local canvas — no network
+  var a = document.createElement('a');
+  a.href = png; a.download = (MODEL.title || 'architecture').replace(/[^\w.-]+/g, '_') + '.png';
+  document.body.appendChild(a); a.click(); a.remove();
+};
+
+/* ---------- legend (only types/kinds actually present) ---------- */
+(function buildLegend() {
+  var L = document.getElementById('legend'), html = '';
+  var presentTypes = {}, presentKinds = {};
+  cy.nodes().forEach(function (n) { if (!n.hasClass('group') && n.data('ntype')) presentTypes[n.data('ntype')] = true; });
+  cy.edges().forEach(function (e) { if (e.data('ekind')) presentKinds[e.data('ekind')] = true; });
+  html += '<h3>Nodes</h3>';
+  Object.keys(TYPES).forEach(function (t) {
+    if (!presentTypes[t]) return;
+    html += '<div class="row"><span class="sw" style="background:' + TYPES[t].fill + ';border-color:' + TYPES[t].border + '"></span>' + esc(TYPES[t].label) + '</div>';
+  });
+  if (Object.keys(presentKinds).length) {
+    html += '<h3 style="margin-top:8px">Edges</h3>';
+    Object.keys(EDGES).forEach(function (k) {
+      if (!presentKinds[k]) return;
+      html += '<div class="row"><span class="el" style="border-top-color:' + EDGES[k].color + ';border-top-style:' + EDGES[k].style + '"></span>' + esc(EDGES[k].label) + '</div>';
+    });
+  }
+  html += '<div class="toggle" id="legendHelp">tip: logos mark known products · click a node to inspect · click a box to collapse</div>';
+  L.innerHTML = html;
+})();
+
+/* ---------- notes / caveats (doc-drift, inferred items) ---------- */
+(function buildNotes() {
+  var notes = MODEL.notes || [];
+  if (!notes.length) return;
+  var el = document.getElementById('notes');
+  var body = '<b id="notesToggle">⚠ ' + notes.length + ' note' + (notes.length > 1 ? 's' : '') + ' / caveats ▾</b>' +
+             '<ul id="notesList" style="display:none">' + notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul>';
+  el.innerHTML = body; el.classList.add('show');
+  document.getElementById('notesToggle').onclick = function () {
+    var list = document.getElementById('notesList');
+    list.style.display = list.style.display === 'none' ? 'block' : 'none';
+  };
+})();
+
+/* now that every interaction + the legend + notes are wired, run the layout */
+runLayout(defaultLayout);
+cy.ready(function () { cy.fit(undefined, 40); });
+</script>
+</body>
+</html>
